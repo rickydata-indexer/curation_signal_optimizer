@@ -94,7 +94,7 @@ get_grt_price <- function() {
   response <- httr::POST(url, body = list(query = query), encode = "json")
   data <- httr::content(response, as = "text", encoding = "UTF-8")
   data_parsed <- jsonlite::fromJSON(data)
-  price <- as.numeric(data_parsed$data$assetPairs[[1]]$currentPrice)
+  price <- as.numeric(data_parsed$data$assetPairs$currentPrice)
   return(price)
 }
 
@@ -164,30 +164,69 @@ calculate_opportunities <- function(deployments, query_fees, query_counts, grt_p
 # Function to get user's curation signal
 get_user_curation_signal <- function(wallet_address) {
   url <- "https://gateway.thegraph.com/api/040d2183b97fb279ac2cb8fb2c78beae/subgraphs/id/DZz4kDTdmzWLWsV373w2bSmoar3umKKH9y82SUKr5qmp"
-  query <- sprintf('
-  {
-    nameSignals(where: {curator: "%s"}, first: 1000, orderBy: signal, orderDirection: desc) {
-      subgraph {
-        currentVersion {
-          subgraphDeployment {
-            ipfsHash
+  query <- '
+  query($wallet: String!) {
+    curator(id: $wallet) {
+      id
+      nameSignals(first: 1000) {
+        signalledTokens
+        unsignalledTokens
+        signal
+        subgraph {
+          id
+          metadata {
+            displayName
+          }
+          currentVersion {
+            id
+            subgraphDeployment {
+              ipfsHash
+              pricePerShare
+              signalAmount
+            }
           }
         }
       }
-      signal
     }
   }
-  ', wallet_address)
-  response <- httr::POST(url, body = list(query = query), encode = "json")
+  '
+  
+  variables <- list(wallet = tolower(wallet_address))
+  
+  response <- tryCatch({
+    httr::POST(url, body = list(query = query, variables = variables), encode = "json")
+  }, error = function(e) {
+    warning("Error in API request: ", e$message)
+    return(NULL)
+  })
+  
+  if (is.null(response)) {
+    return(list())
+  }
+  
   data <- httr::content(response, as = "text", encoding = "UTF-8")
   parsed_data <- jsonlite::fromJSON(data)
   
-  name_signals <- parsed_data$data$nameSignals
+  curator_data <- parsed_data$data$curator
   
-  user_signals <- setNames(
-    lapply(name_signals$signal, function(s) as.numeric(s) / 1e18),
-    sapply(name_signals$subgraph$currentVersion$subgraphDeployment$ipfsHash, identity)
-  )
+  if (is.null(curator_data) || length(curator_data$nameSignals) == 0) {
+    return(list())
+  }
+  
+  name_signals <- curator_data$nameSignals
+  
+  user_signals <- lapply(name_signals, function(signal) {
+    list(
+      ipfs_hash = signal$subgraph$currentVersion$subgraphDeployment$ipfsHash,
+      signal = as.numeric(signal$signal) / 1e18,
+      signalled_tokens = as.numeric(signal$signalledTokens) / 1e18,
+      unsignalled_tokens = as.numeric(signal$unsignalledTokens) / 1e18,
+      subgraph_id = signal$subgraph$id,
+      display_name = signal$subgraph$metadata$displayName,
+      price_per_share = as.numeric(signal$subgraph$currentVersion$subgraphDeployment$pricePerShare) / 1e18,
+      total_signal_amount = as.numeric(signal$subgraph$currentVersion$subgraphDeployment$signalAmount) / 1e18
+    )
+  })
   
   return(user_signals)
 }
@@ -417,7 +456,7 @@ server <- function(input, output, session) {
   # Fetch data on startup
   observe({
     rv$deployments <- get_subgraph_deployments()
-    rv$query_data <- process_csv_files("python_data/hourly_query_volume")
+    rv$query_data <- process_csv_files("/root/graphprotocol-mainnet-docker/python_data/daily_query_volume")
     rv$grt_price <- get_grt_price()
     rv$opportunities <- calculate_opportunities(rv$deployments, rv$query_data$query_fees, rv$query_data$query_counts, rv$grt_price)
   })
@@ -447,13 +486,17 @@ server <- function(input, output, session) {
   
   # Low Performing Allocations
   output$low_performing_table <- renderDataTable({
-    low_performing <- rv$user_opportunities %>% filter(apr < 1)
-    if (nrow(low_performing) > 0) {
-      low_performing %>%
-        select(`IPFS Hash` = ipfs_hash, `Signal (GRT)` = user_signal, `APR (%)` = apr) %>%
-        datatable(options = list(pageLength = 5))
+    if (!is.null(rv$user_opportunities) && nrow(rv$user_opportunities) > 0) {
+      low_performing <- rv$user_opportunities %>% filter(apr < 1)
+      if (nrow(low_performing) > 0) {
+        low_performing %>%
+          select(`IPFS Hash` = ipfs_hash, `Signal (GRT)` = user_signal, `APR (%)` = apr) %>%
+          datatable(options = list(pageLength = 5))
+      } else {
+        datatable(data.frame(Message = "No allocations with APR below 1%"))
+      }
     } else {
-      datatable(data.frame(Message = "No allocations with APR below 1%"))
+      datatable(data.frame(Message = "No user opportunities data available"))
     }
   })
   
