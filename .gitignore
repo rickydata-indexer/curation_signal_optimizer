@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 curation_signal_optimizer.Rproj
+.env
+*.env

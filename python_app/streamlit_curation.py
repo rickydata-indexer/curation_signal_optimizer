@@ -9,7 +9,20 @@ import statistics
 import sys
 import subprocess
 import importlib
+import base64
+from dotenv import load_dotenv
+import json
 
+# Load environment variables
+load_dotenv()
+
+# Debug logging for environment variables
+username = os.getenv('SUPABASE_USERNAME')
+password = os.getenv('SUPABASE_PASSWORD')
+st.write("Debug - Environment Variables:", {
+    'username_exists': bool(username),
+    'password_exists': bool(password)
+})
 
 default_wallet = "0x74dbb201ecc0b16934e68377bc13013883d9417b"
 
@@ -51,40 +64,107 @@ def get_subgraph_deployments():
     
     return all_deployments
 
-# Function to process CSV files and aggregate query fees and counts
+def query_supabase():
+    """Get data from Supabase using pg-meta endpoint."""
+    try:
+        import requests
+        from datetime import datetime, timedelta
+
+        # Supabase connection details
+        BASE_URL = "http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io"
+        API_URL = f"{BASE_URL}/api/pg-meta/default/query"  # Using pg-meta endpoint
+
+        # Get credentials from environment variables
+        username = os.getenv('SUPABASE_USERNAME')
+        password = os.getenv('SUPABASE_PASSWORD')
+
+        # Create Basic auth header
+        credentials = f"{username}:{password}"
+        auth_bytes = credentials.encode('ascii')
+        base64_auth = base64.b64encode(auth_bytes).decode('ascii')
+
+        # Headers
+        headers = {
+            "Authorization": f"Basic {base64_auth}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        # Get data from the last week
+        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+
+        # SQL query
+        sql_query = f"""
+        SELECT 
+            subgraph_deployment_ipfs_hash,
+            SUM(total_query_fees) as total_query_fees,
+            SUM(query_count) as query_count
+        FROM qos_hourly_query_volume 
+        WHERE end_epoch > '{week_ago}'
+        GROUP BY subgraph_deployment_ipfs_hash
+        """
+
+        # Debug logging
+        st.write("Debug - Request URL:", API_URL)
+        st.write("Debug - SQL Query:", sql_query)
+        st.write("Debug - Headers:", {k: v for k, v in headers.items() if k != 'Authorization'})
+
+        # Execute the query
+        response = requests.post(
+            API_URL,
+            headers=headers,
+            json={"query": sql_query}
+        )
+
+        st.write("Debug - Response Status:", response.status_code)  # Debug logging
+
+        if response.status_code == 200:
+            result = response.json()
+            st.write("Debug - Supabase Response:", result)  # Debug logging
+            return result.get('result', [])
+        else:
+            raise Exception(f"Error executing query: HTTP {response.status_code} - {response.text}")
+
+    except Exception as e:
+        raise Exception(f"Error: {str(e)}")
+
+# Function to process query data from Supabase
 @st.cache_data(ttl=1800)  # Cache for 30 minutes
-def process_csv_files(directory):
+def process_query_data():
     now = datetime.now()
     week_ago = now - timedelta(days=7)
 
-    query_fees = {}
-    query_counts = {}
+    try:
+        rows = query_supabase()
+        st.write("Debug - Query Result:", len(rows) if rows else 0)  # Debug logging
+        
+        # Initialize dictionaries
+        query_fees = {}
+        query_counts = {}
 
-    for filename in os.listdir(directory):
-        if filename.endswith('.csv'):
-            df = pd.read_csv(os.path.join(directory, filename))
-            df['end_epoch'] = pd.to_datetime(df['end_epoch'])
+        # Process results
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict):
+                    ipfs_hash = row.get('subgraph_deployment_ipfs_hash')
+                    if ipfs_hash:
+                        query_fees[ipfs_hash] = float(row.get('total_query_fees', 0))
+                        query_counts[ipfs_hash] = int(row.get('query_count', 0))
 
-            # Filter data for the last week
-            df_week = df[df['end_epoch'] > week_ago]
+        st.write("Debug - Processed Data:", {  # Debug logging
+            'query_fees_count': len(query_fees),
+            'query_counts_count': len(query_counts),
+            'sample_data': {
+                'fees': dict(list(query_fees.items())[:2]),
+                'counts': dict(list(query_counts.items())[:2])
+            }
+        })
 
-            # Group by subgraph deployment and sum query fees and counts
-            grouped_fees = df_week.groupby('subgraph_deployment_ipfs_hash')['total_query_fees'].sum()
-            grouped_counts = df_week.groupby('subgraph_deployment_ipfs_hash')['query_count'].sum()
+        return query_fees, query_counts
 
-            for ipfs_hash, fees in grouped_fees.items():
-                if ipfs_hash in query_fees:
-                    query_fees[ipfs_hash] += fees
-                else:
-                    query_fees[ipfs_hash] = fees
-
-            for ipfs_hash, count in grouped_counts.items():
-                if ipfs_hash in query_counts:
-                    query_counts[ipfs_hash] += count
-                else:
-                    query_counts[ipfs_hash] = count
-
-    return query_fees, query_counts
+    except Exception as e:
+        st.error(f"Error querying Supabase: {str(e)}")
+        return {}, {}
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_grt_price():
@@ -286,44 +366,7 @@ def calculate_optimal_allocations(opportunities, user_signals, total_signal, grt
         else:
             break
 
-    # Prepare data for display
-    optimal_allocations = []
-    total_estimated_earnings_after = 0
-    total_allocated_signal = 0
-
-    for opp in top_opportunities:
-        ipfs_hash = opp['ipfs_hash']
-        signal_amount_before = opp['signal_amount']
-        signalled_tokens_before = opp['signalled_tokens']
-        annual_fees = opp['total_earnings']
-        curator_share = opp['curator_share']
-        weekly_queries = opp['weekly_queries']
-
-        apr_before = opp['apr']
-
-        allocated_amount = allocations[ipfs_hash]
-        total_allocated_signal += allocated_amount
-
-        # After adding tokens
-        signal_amount_after = signal_amount_before + allocated_amount
-        signalled_tokens_after = signalled_tokens_before + allocated_amount
-        portion_owned_after = signal_amount_after / signalled_tokens_after
-        estimated_earnings_after = curator_share * portion_owned_after
-        apr_after = (estimated_earnings_after / (signal_amount_after * grt_price)) * 100 if allocated_amount > 0 else None
-
-        total_estimated_earnings_after += estimated_earnings_after
-
-        optimal_allocations.append({
-            'ipfs_hash': ipfs_hash,
-            'allocated_signal': allocated_amount,
-            'new_total_signal': signalled_tokens_after,
-            'portion_owned': portion_owned_after,
-            'estimated_earnings': estimated_earnings_after,
-            'apr': apr_after,
-            'weekly_queries': weekly_queries
-        })
-
-    return optimal_allocations
+    return allocations
 
 def calculate_signal_distribution(opportunities, total_signal, grt_price):
     # Initialize allocation dictionary
@@ -406,9 +449,15 @@ def main():
 
     # Data Retrieval and Processing
     deployments = get_subgraph_deployments()
-    query_fees, query_counts = process_csv_files('/root/graphprotocol-mainnet-docker/python_data/hourly_query_volume/')
+    st.write("Debug - Deployments:", len(deployments))  # Debug logging
+    query_fees, query_counts = process_query_data()  # Now using Supabase instead of CSV files
+    st.write("Debug - Query Data:", {  # Debug logging
+        'query_fees_count': len(query_fees),
+        'query_counts_count': len(query_counts)
+    })
     grt_price = get_grt_price()
     opportunities = calculate_opportunities(deployments, query_fees, query_counts, grt_price)
+    st.write("Debug - Opportunities:", len(opportunities))  # Debug logging
 
     with tabs[0]:  # Summary tab
         st.subheader("Summary")
@@ -416,11 +465,13 @@ def main():
         st.write(f"Current GRT Price: ${grt_price:.2f}")
 
         user_signals = get_user_curation_signal(wallet_address)
+        st.write("Debug - User Signals:", len(user_signals))  # Debug logging
         if not user_signals:
             st.warning("No curation signals found for this wallet address.")
             return
 
         user_opportunities = calculate_user_opportunities(user_signals, opportunities, grt_price)
+        st.write("Debug - User Opportunities:", len(user_opportunities))  # Debug logging
         if not user_opportunities:
             st.warning("No opportunities found for your current curation signals.")
             return
