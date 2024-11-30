@@ -121,7 +121,8 @@ def query_supabase():
         if response.status_code == 200:
             result = response.json()
             st.write("Debug - Supabase Response:", result)  # Debug logging
-            return result.get('result', [])
+            # Return the result directly since it's already a list
+            return result
         else:
             raise Exception(f"Error executing query: HTTP {response.status_code} - {response.text}")
 
@@ -143,13 +144,12 @@ def process_query_data():
         query_counts = {}
 
         # Process results
-        if isinstance(rows, list):
+        if rows:  # Check if rows is not None
             for row in rows:
-                if isinstance(row, dict):
-                    ipfs_hash = row.get('subgraph_deployment_ipfs_hash')
-                    if ipfs_hash:
-                        query_fees[ipfs_hash] = float(row.get('total_query_fees', 0))
-                        query_counts[ipfs_hash] = int(row.get('query_count', 0))
+                ipfs_hash = row['subgraph_deployment_ipfs_hash']  # Access directly since we know the structure
+                if ipfs_hash:
+                    query_fees[ipfs_hash] = float(row['total_query_fees'])  # Access directly
+                    query_counts[ipfs_hash] = int(row['query_count'])  # Access directly
 
         st.write("Debug - Processed Data:", {  # Debug logging
             'query_fees_count': len(query_fees),
