@@ -17,7 +17,7 @@ class AllocationOptimizer:
     ENTRY_COST_PERCENTAGE = 0.005  # 0.5% entry cost
     CURATOR_SHARE = 0.10  # 10% of query fees
     EARNINGS_PER_100K_QUERIES = 4  # $4 per 100k queries
-    STEP_SIZE = 100  # Match original allocation size
+    STEP_SIZE = 10  # How much to increase allocations each time
     MAX_ITERATIONS = 1000  # Prevent infinite loops
     
     def __init__(self, opportunities: List[Opportunity], grt_price: float):
