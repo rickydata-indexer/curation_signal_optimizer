@@ -16,13 +16,8 @@ import json
 # Load environment variables
 load_dotenv()
 
-# Debug logging for environment variables
 username = os.getenv('SUPABASE_USERNAME')
 password = os.getenv('SUPABASE_PASSWORD')
-st.write("Debug - Environment Variables:", {
-    'username_exists': bool(username),
-    'password_exists': bool(password)
-})
 
 default_wallet = "0x74dbb201ecc0b16934e68377bc13013883d9417b"
 
@@ -104,11 +99,6 @@ def query_supabase():
         GROUP BY subgraph_deployment_ipfs_hash
         """
 
-        # Debug logging
-        st.write("Debug - Request URL:", API_URL)
-        st.write("Debug - SQL Query:", sql_query)
-        st.write("Debug - Headers:", {k: v for k, v in headers.items() if k != 'Authorization'})
-
         # Execute the query
         response = requests.post(
             API_URL,
@@ -116,13 +106,8 @@ def query_supabase():
             json={"query": sql_query}
         )
 
-        st.write("Debug - Response Status:", response.status_code)  # Debug logging
-
         if response.status_code == 200:
-            result = response.json()
-            st.write("Debug - Supabase Response:", result)  # Debug logging
-            # Return the result directly since it's already a list
-            return result
+            return response.json()
         else:
             raise Exception(f"Error executing query: HTTP {response.status_code} - {response.text}")
 
@@ -137,28 +122,18 @@ def process_query_data():
 
     try:
         rows = query_supabase()
-        st.write("Debug - Query Result:", len(rows) if rows else 0)  # Debug logging
         
         # Initialize dictionaries
         query_fees = {}
         query_counts = {}
 
         # Process results
-        if rows:  # Check if rows is not None
+        if rows:
             for row in rows:
-                ipfs_hash = row['subgraph_deployment_ipfs_hash']  # Access directly since we know the structure
+                ipfs_hash = row['subgraph_deployment_ipfs_hash']
                 if ipfs_hash:
-                    query_fees[ipfs_hash] = float(row['total_query_fees'])  # Access directly
-                    query_counts[ipfs_hash] = int(row['query_count'])  # Access directly
-
-        st.write("Debug - Processed Data:", {  # Debug logging
-            'query_fees_count': len(query_fees),
-            'query_counts_count': len(query_counts),
-            'sample_data': {
-                'fees': dict(list(query_fees.items())[:2]),
-                'counts': dict(list(query_counts.items())[:2])
-            }
-        })
+                    query_fees[ipfs_hash] = float(row['total_query_fees'])
+                    query_counts[ipfs_hash] = int(row['query_count'])
 
         return query_fees, query_counts
 
@@ -449,15 +424,9 @@ def main():
 
     # Data Retrieval and Processing
     deployments = get_subgraph_deployments()
-    st.write("Debug - Deployments:", len(deployments))  # Debug logging
-    query_fees, query_counts = process_query_data()  # Now using Supabase instead of CSV files
-    st.write("Debug - Query Data:", {  # Debug logging
-        'query_fees_count': len(query_fees),
-        'query_counts_count': len(query_counts)
-    })
+    query_fees, query_counts = process_query_data()
     grt_price = get_grt_price()
     opportunities = calculate_opportunities(deployments, query_fees, query_counts, grt_price)
-    st.write("Debug - Opportunities:", len(opportunities))  # Debug logging
 
     with tabs[0]:  # Summary tab
         st.subheader("Summary")
@@ -465,13 +434,11 @@ def main():
         st.write(f"Current GRT Price: ${grt_price:.2f}")
 
         user_signals = get_user_curation_signal(wallet_address)
-        st.write("Debug - User Signals:", len(user_signals))  # Debug logging
         if not user_signals:
             st.warning("No curation signals found for this wallet address.")
             return
 
         user_opportunities = calculate_user_opportunities(user_signals, opportunities, grt_price)
-        st.write("Debug - User Opportunities:", len(user_opportunities))  # Debug logging
         if not user_opportunities:
             st.warning("No opportunities found for your current curation signals.")
             return
