@@ -17,10 +17,15 @@ class AllocationOptimizer:
     ENTRY_COST_PERCENTAGE = 0.005  # 0.5% entry cost
     CURATOR_SHARE = 0.10  # 10% of query fees
     EARNINGS_PER_100K_QUERIES = 4  # $4 per 100k queries
-    STEP_SIZE = 10  # Allocate 10 GRT at a time
+    STEP_SIZE = 100  # Base step size
     
     def __init__(self, opportunities: List[Opportunity], grt_price: float):
-        self.opportunities = sorted(opportunities, key=lambda x: x.apr, reverse=True)
+        # Sort opportunities by query volume to signal ratio
+        self.opportunities = sorted(
+            opportunities,
+            key=lambda x: (x.weekly_queries / (x.signalled_tokens + 1)) * (x.apr / 100),
+            reverse=True
+        )
         self.grt_price = grt_price
     
     def calculate_opportunity_metrics(self, opp: Opportunity, additional_signal: float = 0) -> tuple:
@@ -50,25 +55,37 @@ class AllocationOptimizer:
 
     def find_best_opportunity(self, current_allocations: Dict[str, float], step_size: float) -> tuple:
         """Find the best opportunity for the next allocation step."""
-        best_apr = -1
+        best_score = -1
         best_opp = None
+        best_metrics = None
         
         for opp in self.opportunities:
             current_allocation = current_allocations.get(opp.ipfs_hash, 0)
             
+            # Skip if we already have significant allocation
+            if current_allocation > opp.signalled_tokens * 0.3:
+                continue
+            
             # Calculate metrics with additional step_size allocation
-            apr, _ = self.calculate_opportunity_metrics(opp, current_allocation + step_size)
+            apr, earnings = self.calculate_opportunity_metrics(opp, current_allocation + step_size)
             
             # Consider entry cost if this is a new position
             if current_allocation == 0:
-                # Reduce APR by entry cost
                 apr -= (self.ENTRY_COST_PERCENTAGE * 100)
             
-            if apr > best_apr:
-                best_apr = apr
+            # Calculate opportunity score based on multiple factors
+            query_to_signal_ratio = opp.weekly_queries / (opp.signalled_tokens + current_allocation + 1)
+            earnings_potential = earnings * (1 + query_to_signal_ratio)
+            
+            # Score considers both immediate APR and growth potential
+            score = apr * query_to_signal_ratio * (1 + earnings_potential)
+            
+            if score > best_score:
+                best_score = score
                 best_opp = opp
+                best_metrics = (apr, earnings)
         
-        return best_opp, best_apr
+        return best_opp, best_metrics
 
     def calculate_portfolio_metrics(self, allocations: Dict[str, float]) -> tuple:
         """Calculate portfolio-wide metrics."""
@@ -83,20 +100,19 @@ class AllocationOptimizer:
         total_entry_cost = total_allocated * self.ENTRY_COST_PERCENTAGE * active_positions
         
         # Calculate earnings for each position
-        weighted_aprs = []
+        position_aprs = []
         for opp in self.opportunities:
             allocation = allocations.get(opp.ipfs_hash, 0)
             if allocation > 0:
                 apr, earnings = self.calculate_opportunity_metrics(opp, allocation)
                 total_earnings += earnings
-                # Weight APR by allocation size
-                weighted_aprs.append(apr * (allocation / total_allocated))
+                position_aprs.append(apr)
         
         # Subtract entry costs from earnings
         net_earnings = total_earnings - (total_entry_cost * self.grt_price)
         
-        # Calculate weighted average APR
-        portfolio_apr = sum(weighted_aprs) if weighted_aprs else 0
+        # Calculate average APR
+        portfolio_apr = sum(position_aprs) / len(position_aprs) if position_aprs else 0
         
         return net_earnings, portfolio_apr
 
@@ -105,50 +121,50 @@ class AllocationOptimizer:
         if available_grt <= 0:
             raise Exception("Available GRT must be greater than 0")
         
-        # Initialize allocations
         allocations = {}
         remaining_grt = available_grt
-        min_step = self.STEP_SIZE
         
-        # Keep track of APRs to detect diminishing returns
-        last_best_apr = float('inf')
-        apr_decline_count = 0
+        # Initial larger steps to quickly capture best opportunities
+        current_step = self.STEP_SIZE * 2
+        min_step = self.STEP_SIZE / 2
         
         while remaining_grt >= min_step:
-            # Find best opportunity for next allocation
-            best_opp, best_apr = self.find_best_opportunity(allocations, min_step)
+            best_opp, metrics = self.find_best_opportunity(allocations, current_step)
             
-            # Stop if no good opportunities left
-            if best_opp is None or best_apr <= 0:
+            if not best_opp or not metrics:
+                # Reduce step size if no good opportunities found
+                if current_step > min_step:
+                    current_step = max(current_step / 2, min_step)
+                    continue
                 break
-                
-            # Track APR decline
-            if best_apr < last_best_apr:
-                apr_decline_count += 1
-            else:
-                apr_decline_count = 0
-            last_best_apr = best_apr
             
-            # Increase step size if APR is still good
-            current_step = min_step
-            if apr_decline_count < 3 and remaining_grt >= min_step * 10:
-                current_step = min_step * 10
+            apr, _ = metrics
             
-            # Allocate to best opportunity
+            # Skip if APR is too low
+            if apr < 5:  # 5% minimum APR threshold
+                if current_step > min_step:
+                    current_step = max(current_step / 2, min_step)
+                    continue
+                break
+            
+            # Calculate allocation for this opportunity
             current_allocation = allocations.get(best_opp.ipfs_hash, 0)
-            allocations[best_opp.ipfs_hash] = current_allocation + current_step
-            remaining_grt -= current_step
             
-            # If APR is declining rapidly, try other opportunities
-            if apr_decline_count >= 5:
-                break
-        
-        # If we have remaining GRT, distribute it proportionally
-        if remaining_grt > 0 and allocations:
-            total_allocated = sum(allocations.values())
-            for ipfs_hash in allocations:
-                portion = allocations[ipfs_hash] / total_allocated
-                allocations[ipfs_hash] += remaining_grt * portion
+            # Determine allocation size based on opportunity quality
+            if apr > 50:  # Very good opportunity
+                allocation_size = min(current_step * 2, remaining_grt)
+            elif apr > 20:  # Good opportunity
+                allocation_size = min(current_step, remaining_grt)
+            else:  # Decent opportunity
+                allocation_size = min(current_step / 2, remaining_grt)
+            
+            # Update allocation
+            allocations[best_opp.ipfs_hash] = current_allocation + allocation_size
+            remaining_grt -= allocation_size
+            
+            # Adjust step size based on remaining GRT
+            if remaining_grt < available_grt * 0.2:  # Last 20%
+                current_step = min_step
         
         # Calculate final metrics
         earnings, apr = self.calculate_portfolio_metrics(allocations)
