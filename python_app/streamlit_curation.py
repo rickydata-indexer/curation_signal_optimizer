@@ -14,6 +14,9 @@ def main():
     st.title("Curation Signal Allocation Optimizer")
     st.write("This app helps you allocate your curation signal across subgraphs to maximize your APR.")
 
+    # Get wallet address input first, so it's available for all tabs
+    wallet_address = st.text_input("Enter your wallet address", value=DEFAULT_WALLET).lower()
+
     # Define Tabs
     tab_labels = ["Summary", "Your Current Curation Signal", "Find Opportunities", "Full Subgraph List"]
     tabs = st.tabs(tab_labels)
@@ -24,10 +27,7 @@ def main():
     grt_price = get_grt_price()
     opportunities = calculate_opportunities(deployments, query_fees, query_counts, grt_price)
 
-    # Get wallet address input
-    wallet_address = st.text_input("Enter your wallet address", value=DEFAULT_WALLET).lower()
     user_signals = get_user_curation_signal(wallet_address)
-    
     if not user_signals:
         st.warning("No curation signals found for this wallet address.")
         return
@@ -46,7 +46,7 @@ def main():
             render_curation_signal_tab(user_opportunities, grt_price)
         
         with tabs[2]:  # Find Opportunities tab
-            render_opportunities_tab(opportunities, grt_price)
+            render_opportunities_tab(opportunities, grt_price, wallet_address)
 
         with tabs[3]:  # Full Subgraph List tab
             render_subgraph_list_tab(opportunities)

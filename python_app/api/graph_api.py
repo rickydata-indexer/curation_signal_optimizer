@@ -112,3 +112,31 @@ def get_user_curation_signal(wallet_address: str) -> Dict[str, float]:
                 user_signals[ipfs_hash] = signal_amount
     
     return user_signals
+
+@st.cache_data(ttl=CACHE_TTL_SHORT)
+def get_account_balance(wallet_address: str) -> float:
+    """Fetch account's GRT balance from The Graph API."""
+    query = """
+    query($wallet: String!) {
+      graphAccounts(where: {id: $wallet}) {
+        id
+        balance
+      }
+    }
+    """
+    
+    variables = {
+        "wallet": wallet_address.lower()
+    }
+    
+    response = requests.post(GRAPH_API_URL, json={'query': query, 'variables': variables})
+    if response.status_code != 200:
+        raise Exception(f"Query failed with status code {response.status_code}: {response.text}")
+    
+    data = response.json()
+    accounts = data.get('data', {}).get('graphAccounts', [])
+    
+    if accounts:
+        # Convert balance from wei to GRT
+        return float(accounts[0].get('balance', 0)) / 1e18
+    return 0.0

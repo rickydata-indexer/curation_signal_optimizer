@@ -1,97 +1,95 @@
 import streamlit as st
 import pandas as pd
 from typing import List
-from models.opportunities import Opportunity, calculate_signal_distribution
+from models.opportunities import Opportunity
+from models.allocation.optimizer import AllocationOptimizer
 from utils.formatting import color_apr, format_currency, format_grt, format_percentage
+from api.graph_api import get_account_balance
 
 def render_opportunities_tab(
     opportunities: List[Opportunity],
-    grt_price: float
+    grt_price: float,
+    wallet_address: str
 ) -> None:
     """Render the Find Opportunities tab content."""
     st.subheader("Find Opportunities")
     
-    # User inputs
-    total_signal_to_add = st.number_input(
-        "Total signal amount to add (GRT)",
-        value=10000,
-        min_value=0
-    )
-    num_subgraphs = st.number_input(
-        "Number of subgraphs to allocate across",
-        value=5,
-        min_value=1
-    )
-
-    # Calculate signal distribution
-    top_opportunities = opportunities[:num_subgraphs]
-    allocations = calculate_signal_distribution(
-        top_opportunities,
-        total_signal_to_add,
-        grt_price
-    )
-
-    # Prepare data for display
-    data = []
-    total_estimated_earnings_after = 0
-    total_allocated_signal = 0
-
-    for opp in top_opportunities:
-        ipfs_hash = opp.ipfs_hash
-        signal_amount_before = opp.signal_amount
-        signalled_tokens_before = opp.signalled_tokens
-        curator_share = opp.curator_share
-        weekly_queries = opp.weekly_queries
-
-        apr_before = opp.apr
-
-        allocated_amount = allocations[ipfs_hash]
-        total_allocated_signal += allocated_amount
-
-        # After adding tokens
-        signal_amount_after = signal_amount_before + allocated_amount
-        signalled_tokens_after = signalled_tokens_before + allocated_amount
-        portion_owned_after = signal_amount_after / signalled_tokens_after
-        estimated_earnings_after = curator_share * portion_owned_after
-        apr_after = (estimated_earnings_after / (signal_amount_after * grt_price)) * 100 if allocated_amount > 0 else None
-
-        total_estimated_earnings_after += estimated_earnings_after
-
-        data.append({
-            'Signal Before (GRT)': round(signal_amount_before, 2) if signal_amount_before is not None else '-',
-            'Signal After (GRT)': round(signal_amount_after, 2) if signal_amount_after is not None else '-',
-            'APR Before (%)': round(apr_before, 2) if apr_before is not None else '-',
-            'APR After (%)': round(apr_after, 2) if apr_after is not None else '-',
-            'Earnings After ($)': round(estimated_earnings_after, 2) if estimated_earnings_after is not None else '-',
-            'Allocated Signal (GRT)': round(allocated_amount, 2) if allocated_amount is not None else '-',
-            'Weekly Queries': weekly_queries if weekly_queries is not None else '-',
-            'IPFS Hash': ipfs_hash
-        })
-
-    # Display allocation summary
-    st.write(f"Signaling {format_grt(total_signal_to_add)} across {num_subgraphs} subgraphs to maximize rewards.")
-
-    # Display opportunities table
-    df = pd.DataFrame(data)
-    styled_df = df.style.map(color_apr, subset=['APR Before (%)', 'APR After (%)'])
-    st.table(styled_df)
-
-    # Display results summary
-    st.subheader("Signal Results")
-    st.write(f"Total GRT Signaled: {format_grt(total_allocated_signal)}")
-    st.write(f"Total Value of Signaled GRT: {format_currency(total_allocated_signal * grt_price)}")
+    # Get account balance
+    try:
+        available_grt = get_account_balance(wallet_address)
+        st.write(f"Available GRT Balance: {format_grt(available_grt)}")
+        st.write(f"Value in USD: {format_currency(available_grt * grt_price)}")
+    except Exception as e:
+        st.error(f"Error fetching account balance: {str(e)}")
+        return
     
-    st.write("Estimated Earnings:")
-    st.write(f"- Per Day: {format_currency(total_estimated_earnings_after / 365)}")
-    st.write(f"- Per Week: {format_currency(total_estimated_earnings_after / 52)}")
-    st.write(f"- Per Month: {format_currency(total_estimated_earnings_after / 12)}")
-    st.write(f"- Per Year: {format_currency(total_estimated_earnings_after)}")
+    if available_grt <= 0:
+        st.warning("No GRT available for allocation.")
+        return
     
-    # Calculate and display weighted APR
-    weighted_apr = sum(
-        row['APR After (%)'] * row['Allocated Signal (GRT)']
-        for row in data
-        if row['APR After (%)'] != '-' and row['Allocated Signal (GRT)'] != '-'
-    ) / total_allocated_signal if total_allocated_signal > 0 else 0
+    # Initialize optimizer
+    optimizer = AllocationOptimizer(opportunities, grt_price)
     
-    st.write(f"Overall APR: {format_percentage(weighted_apr)}")
+    # Calculate optimal allocation
+    try:
+        result = optimizer.optimize_allocation(available_grt)
+        
+        # Display allocation summary
+        st.write(f"Optimal allocation of {format_grt(available_grt)} across subgraphs to maximize rewards.")
+        
+        # Prepare data for display
+        data = []
+        for opp in opportunities:
+            allocated_amount = result.allocations.get(opp.ipfs_hash, 0)
+            if allocated_amount > 0:
+                # Calculate metrics for this allocation
+                signal_amount_after = opp.signal_amount + allocated_amount
+                signalled_tokens_after = opp.signalled_tokens + allocated_amount
+                portion_owned_after = signal_amount_after / signalled_tokens_after
+                estimated_earnings_after = opp.curator_share * portion_owned_after
+                apr_after = (estimated_earnings_after / (signal_amount_after * grt_price)) * 100
+
+                data.append({
+                    'Current Signal (GRT)': round(opp.signal_amount, 2),
+                    'Allocated Amount (GRT)': round(allocated_amount, 2),
+                    'Total Signal After (GRT)': round(signal_amount_after, 2),
+                    'Current APR (%)': round(opp.apr, 2),
+                    'APR After (%)': round(apr_after, 2),
+                    'Est. Annual Earnings ($)': round(estimated_earnings_after, 2),
+                    'Weekly Queries': opp.weekly_queries,
+                    'IPFS Hash': opp.ipfs_hash
+                })
+
+        # Display opportunities table
+        if data:
+            df = pd.DataFrame(data)
+            styled_df = df.style.map(color_apr, subset=['Current APR (%)', 'APR After (%)'])
+            st.table(styled_df)
+
+            # Display results summary
+            st.subheader("Allocation Results")
+            st.write(f"Total GRT to Allocate: {format_grt(result.total_allocated)}")
+            st.write(f"Total Value to Allocate: {format_currency(result.total_allocated * grt_price)}")
+            
+            st.write("Estimated Annual Earnings:")
+            st.write(f"- Per Day: {format_currency(result.expected_earnings / 365)}")
+            st.write(f"- Per Week: {format_currency(result.expected_earnings / 52)}")
+            st.write(f"- Per Month: {format_currency(result.expected_earnings / 12)}")
+            st.write(f"- Per Year: {format_currency(result.expected_earnings)}")
+            
+            st.write(f"Expected Overall APR: {format_percentage(result.expected_apr)}")
+            
+            # Add allocation instructions
+            st.subheader("Allocation Instructions")
+            st.write("""
+            To implement this allocation:
+            1. Visit The Graph Explorer (https://thegraph.com/explorer)
+            2. Search for each subgraph using its IPFS hash
+            3. Click "Signal" and enter the allocated amount
+            4. Confirm the transaction in your wallet
+            """)
+        else:
+            st.warning("No optimal allocations found.")
+            
+    except Exception as e:
+        st.error(f"Error calculating optimal allocation: {str(e)}")
