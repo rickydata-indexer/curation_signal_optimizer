@@ -5,3 +5,5 @@
 curation_signal_optimizer.Rproj
 .env
 *.env
+*.pyc
+.pyc
