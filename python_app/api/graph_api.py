@@ -8,7 +8,7 @@ def get_subgraph_deployments() -> List[Dict]:
     """Fetch all subgraph deployments from The Graph API."""
     query_template = '''
     {
-      subgraphDeployments(first: 1000, where: {id_gt: "%s", deniedAt: 0}, orderBy: id, orderDirection: asc) {
+      subgraphDeployments(first: 1000, where: {id_gt: "%s", deniedAt: 0, signalledTokens_gt: "100000000000000000000"}, orderBy: id, orderDirection: asc) {
         id
         ipfsHash
         signalAmount
