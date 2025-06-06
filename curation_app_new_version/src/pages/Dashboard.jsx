@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { UserSignal, Opportunity } from '@/api/entities';
 import WalletInput from '../components/WalletInput';
 import TabNavigation from '../components/TabNavigation';
 import SummaryTab from '../components/SummaryTab';
@@ -7,66 +6,40 @@ import SignalsTab from '../components/SignalsTab';
 import OpportunitiesTab from '../components/OpportunitiesTab';
 import SubgraphsTab from '../components/SubgraphsTab';
 
-const DEFAULT_WALLET = "0x742d35cc6644c4532b156b8d90e1c65f5c1b5fdb";
+// Import real APIs
+import { getSubgraphDeployments, getUserCurationSignal, getGrtPrice } from '../api/graphApi';
+import { processQueryData } from '../api/supabaseApi';
+import { 
+  calculateOpportunities, 
+  calculateUserOpportunities,
+  calculatePortfolioMetrics,
+  calculateDiversificationMetrics
+} from '../utils/opportunityCalculator';
 
-// Mock data generation
-const generateMockUserSignals = (walletAddress) => {
-  const signals = [];
-  const sampleHashes = [
-    "QmR6A1vqgDVFGhj47R89UJBZJKqJNwfq8pGbmFY7k5HwA2",
-    "QmS7B2wrhEVGij58S90VKCZJLrKpOx1gq9HcnFZ8m6KxB3",
-    "QmT8C3xsiHVHjk69T01WLDaMLsLqPy2hr0IdOG9n7LyC4",
-    "QmU9D4ytkIWIjl70U12XMEbNTtMrQz3is1JdPH0o8MyD5",
-    "QmV0E5zuljXJkm81V23YOFcOUtOsS{4jt2KeQI1p9NzE6"
-  ];
-  
-  sampleHashes.forEach((hash, index) => {
-    signals.push({
-      id: `${walletAddress}-${hash}`,
-      wallet_address: walletAddress,
-      ipfs_hash: hash,
-      signal_amount: Math.random() * 5000 + 500,
-      total_signal: Math.random() * 50000 + 10000,
-      portion_owned: Math.random() * 0.1 + 0.01,
-      estimated_earnings: Math.random() * 1000 + 100,
-      apr: Math.random() * 20 + 5,
-      weekly_queries: Math.floor(Math.random() * 10000 + 1000)
-    });
-  });
-  
-  return signals;
-};
-
-const generateMockOpportunities = () => {
-  const opportunities = [];
-  
-  for (let i = 0; i < 100; i++) {
-    const hash = `QmExample${i.toString().padStart(3, '0')}${Math.random().toString(36).substr(2, 30)}`;
-    opportunities.push({
-      id: hash,
-      ipfs_hash: hash,
-      subgraph_name: `Subgraph ${i + 1}`,
-      signal_amount: Math.random() * 10000 + 1000,
-      signalled_tokens: Math.random() * 100000 + 20000,
-      annual_queries: Math.floor(Math.random() * 1000000 + 100000),
-      total_earnings: Math.random() * 5000 + 500,
-      curator_share: Math.random() * 500 + 50,
-      estimated_earnings: Math.random() * 2000 + 200,
-      apr: Math.random() * 25 + 2,
-      weekly_queries: Math.floor(Math.random() * 20000 + 2000)
-    });
-  }
-  
-  return opportunities.sort((a, b) => b.apr - a.apr);
-};
+const DEFAULT_WALLET = "0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec";
 
 export default function Dashboard() {
   const [walletAddress, setWalletAddress] = useState(DEFAULT_WALLET);
   const [activeTab, setActiveTab] = useState('summary');
   const [userSignals, setUserSignals] = useState([]);
-  const [opportunities, setOpportunities] = useState([]);
+  const [userOpportunities, setUserOpportunities] = useState([]);
+  const [allOpportunities, setAllOpportunities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [grtPrice] = useState(0.0892); // Mock GRT price
+  const [grtPrice, setGrtPrice] = useState(0.0892);
+  const [error, setError] = useState(null);
+  const [portfolioMetrics, setPortfolioMetrics] = useState({
+    totalValue: 0,
+    totalEarnings: 0,
+    averageAPR: 0,
+    totalSignalAmount: 0,
+    positionCount: 0
+  });
+  const [diversificationMetrics, setDiversificationMetrics] = useState({
+    riskLevel: 'Unknown',
+    diversificationScore: 0,
+    optimizationScore: 0,
+    concentration: 1.0
+  });
 
   useEffect(() => {
     if (walletAddress) {
@@ -76,59 +49,117 @@ export default function Dashboard() {
 
   const loadData = async () => {
     setIsLoading(true);
+    setError(null);
+    
     try {
-      // Simulate API calls with mock data
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Loading data for wallet:', walletAddress);
       
-      const mockUserSignals = generateMockUserSignals(walletAddress);
-      const mockOpportunities = generateMockOpportunities();
+      // Load basic data in parallel
+      const [deployments, queryData, currentGrtPrice] = await Promise.all([
+        getSubgraphDeployments(),
+        processQueryData(),
+        getGrtPrice()
+      ]);
+
+      console.log('Loaded deployments:', deployments.length);
+      console.log('Loaded query data:', Object.keys(queryData.queryFees).length, 'subgraphs');
       
-      setUserSignals(mockUserSignals);
-      setOpportunities(mockOpportunities);
+      setGrtPrice(currentGrtPrice);
+
+      // Calculate all opportunities
+      const opportunities = calculateOpportunities(
+        deployments, 
+        queryData.queryFees, 
+        queryData.queryCounts, 
+        currentGrtPrice
+      );
+      
+      console.log('Calculated opportunities:', opportunities.length);
+      setAllOpportunities(opportunities);
+
+      // Load user-specific data
+      const signals = await getUserCurationSignal(walletAddress);
+      console.log('Loaded user signals:', signals.length);
+      setUserSignals(signals);
+
+      if (signals.length > 0) {
+        // Calculate user opportunities
+        const userOpps = calculateUserOpportunities(signals, opportunities, currentGrtPrice);
+        console.log('Calculated user opportunities:', userOpps.length);
+        setUserOpportunities(userOpps);
+
+        // Calculate portfolio metrics
+        const portfolioMetrics = calculatePortfolioMetrics(userOpps, currentGrtPrice);
+        setPortfolioMetrics(portfolioMetrics);
+
+        // Calculate diversification metrics
+        const diversificationMetrics = calculateDiversificationMetrics(userOpps);
+        setDiversificationMetrics(diversificationMetrics);
+      } else {
+        setUserOpportunities([]);
+        setPortfolioMetrics({
+          totalValue: 0,
+          totalEarnings: 0,
+          averageAPR: 0,
+          totalSignalAmount: 0,
+          positionCount: 0
+        });
+        setDiversificationMetrics({
+          riskLevel: 'Unknown',
+          diversificationScore: 0,
+          optimizationScore: 0,
+          concentration: 1.0
+        });
+      }
+
     } catch (error) {
       console.error('Error loading data:', error);
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const calculateTotalValue = () => {
-    return userSignals.reduce((sum, signal) => sum + (signal.signal_amount * grtPrice), 0);
-  };
-
-  const calculateTotalEarnings = () => {
-    return userSignals.reduce((sum, signal) => sum + signal.estimated_earnings, 0);
-  };
-
-  const calculateAverageAPR = () => {
-    if (userSignals.length === 0) return 0;
-    const totalValue = calculateTotalValue();
-    const weightedAPR = userSignals.reduce((sum, signal) => {
-      const weight = (signal.signal_amount * grtPrice) / totalValue;
-      return sum + (signal.apr * weight);
-    }, 0);
-    return weightedAPR;
-  };
-
   const renderActiveTab = () => {
+    if (error) {
+      return (
+        <div className="card-neumorphic p-12 text-center">
+          <div className="text-red-600 mb-4">
+            <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 18.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-neumorphic-dark mb-2">Error Loading Data</h3>
+          <p className="text-neumorphic mb-4">{error}</p>
+          <button 
+            onClick={loadData}
+            className="btn-neumorphic px-6 py-2 rounded-lg"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'summary':
         return (
           <SummaryTab
             walletAddress={walletAddress}
             grtPrice={grtPrice}
-            userSignals={userSignals}
-            totalValue={calculateTotalValue()}
-            totalEarnings={calculateTotalEarnings()}
-            averageAPR={calculateAverageAPR()}
+            userSignals={userOpportunities}
+            totalValue={portfolioMetrics.totalValue}
+            totalEarnings={portfolioMetrics.totalEarnings}
+            averageAPR={portfolioMetrics.averageAPR}
+            diversificationMetrics={diversificationMetrics}
           />
         );
       case 'signals':
-        return <SignalsTab userSignals={userSignals} grtPrice={grtPrice} />;
+        return <SignalsTab userSignals={userOpportunities} grtPrice={grtPrice} />;
       case 'opportunities':
-        return <OpportunitiesTab opportunities={opportunities} grtPrice={grtPrice} />;
+        return <OpportunitiesTab opportunities={allOpportunities} grtPrice={grtPrice} />;
       case 'subgraphs':
-        return <SubgraphsTab opportunities={opportunities} />;
+        return <SubgraphsTab opportunities={allOpportunities} />;
       default:
         return null;
     }
@@ -155,11 +186,31 @@ export default function Dashboard() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
               <p className="text-neumorphic text-lg">Loading your curation data...</p>
+              <p className="text-neumorphic text-sm mt-2">
+                Fetching subgraph deployments and query volume data...
+              </p>
             </div>
           ) : (
             renderActiveTab()
           )}
         </>
+      )}
+
+      {walletAddress && userSignals.length === 0 && !isLoading && !error && (
+        <div className="card-neumorphic p-12 text-center">
+          <div className="text-neumorphic mb-4">
+            <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-neumorphic-dark mb-2">No Curation Signals Found</h3>
+          <p className="text-neumorphic mb-4">
+            This wallet doesn't have any active curation signals yet.
+          </p>
+          <p className="text-neumorphic text-sm">
+            Try a different wallet address or start curating subgraphs!
+          </p>
+        </div>
       )}
     </div>
   );
