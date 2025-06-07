@@ -1,7 +1,7 @@
 // Supabase API integration
 const SUPABASE_USERNAME = import.meta.env.VITE_SUPABASE_USERNAME;
 const SUPABASE_PASSWORD = import.meta.env.VITE_SUPABASE_PASSWORD;
-const SUPABASE_BASE_URL = "http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io";
+const SUPABASE_BASE_URL = "https://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io";
 const SUPABASE_API_URL = `${SUPABASE_BASE_URL}/api/pg-meta/default/query`;
 
 function getAuthHeaders() {

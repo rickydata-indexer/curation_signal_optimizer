@@ -32,9 +32,9 @@ jobs:
         run: npm run build
         working-directory: curation_app_new_version
         env:
-          VITE_THEGRAPH_API_KEY: ${{ secrets.VITE_THEGRAPH_API_KEY }}
-          VITE_SUPABASE_USERNAME: ${{ secrets.VITE_SUPABASE_USERNAME }}
-          VITE_SUPABASE_PASSWORD: ${{ secrets.VITE_SUPABASE_PASSWORD }}
+          VITE_THEGRAPH_API_KEY: ${{ secrets.THEGRAPH_API_KEY }}
+          VITE_SUPABASE_USERNAME: ${{ secrets.SUPABASE_USERNAME }}
+          VITE_SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
