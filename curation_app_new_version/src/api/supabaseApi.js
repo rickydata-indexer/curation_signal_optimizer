@@ -1,8 +1,21 @@
 // Supabase API integration
 const SUPABASE_USERNAME = import.meta.env.VITE_SUPABASE_USERNAME;
 const SUPABASE_PASSWORD = import.meta.env.VITE_SUPABASE_PASSWORD;
-const SUPABASE_BASE_URL = "https://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io";
-const SUPABASE_API_URL = `${SUPABASE_BASE_URL}/api/pg-meta/default/query`;
+// Use direct HTTP in development, CORS proxy in production to bypass SSL certificate issues
+const getSupabaseURL = () => {
+  const baseURL = "supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io";
+  if (import.meta.env.DEV) {
+    return `http://${baseURL}`;
+  } else {
+    // Use allorigins.win CORS proxy for production
+    return `https://api.allorigins.win/raw?url=${encodeURIComponent(`http://${baseURL}`)}`;
+  }
+};
+
+const SUPABASE_BASE_URL = getSupabaseURL();
+const SUPABASE_API_URL = import.meta.env.DEV 
+  ? `${SUPABASE_BASE_URL}/api/pg-meta/default/query`
+  : `https://api.allorigins.win/raw?url=${encodeURIComponent('http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io/api/pg-meta/default/query')}`;
 
 function getAuthHeaders() {
   const credentials = `${SUPABASE_USERNAME}:${SUPABASE_PASSWORD}`;
