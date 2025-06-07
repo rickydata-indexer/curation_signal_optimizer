@@ -179,3 +179,4 @@ npm run preview   # Preview production build
 2. The Python app is maintained for prototyping and testing purposes
 3. Ensure all environment variables are properly configured
 4. Test against real production data and APIs
+
