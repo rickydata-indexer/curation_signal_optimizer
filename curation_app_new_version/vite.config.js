@@ -5,7 +5,7 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/curation-signal-optimizer/', // Replace with your GitHub repo name
+  base: '/curation_signal_optimizer/', // Correct repo name with underscores
   server: {
     port: 5174,
     allowedHosts: true
