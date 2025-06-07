@@ -15,6 +15,7 @@ import {
   calculatePortfolioMetrics,
   calculateDiversificationMetrics
 } from '../utils/opportunityCalculator';
+import { validateAndNormalizeAddress } from '../utils/addressValidation';
 
 const DEFAULT_WALLET = "0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec";
 
@@ -54,6 +55,15 @@ export default function Dashboard() {
     try {
       console.log('Loading data for wallet:', walletAddress);
       
+      // Validate wallet address first
+      const validation = validateAndNormalizeAddress(walletAddress);
+      if (!validation.isValid) {
+        throw new Error(`Invalid wallet address: ${validation.error}`);
+      }
+      
+      const normalizedAddress = validation.normalized;
+      console.log('Normalized address:', normalizedAddress);
+      
       // Load basic data in parallel
       const [deployments, queryData, currentGrtPrice] = await Promise.all([
         getSubgraphDeployments(),
@@ -78,24 +88,28 @@ export default function Dashboard() {
       setAllOpportunities(opportunities);
 
       // Load user-specific data
-      const signals = await getUserCurationSignal(walletAddress);
-      console.log('Loaded user signals:', signals.length);
+      const signals = await getUserCurationSignal(normalizedAddress);
+      console.log('Loaded user signals for', normalizedAddress, ':', signals.length);
+      console.log('Signal details:', signals);
       setUserSignals(signals);
 
       if (signals.length > 0) {
         // Calculate user opportunities
         const userOpps = calculateUserOpportunities(signals, opportunities, currentGrtPrice);
         console.log('Calculated user opportunities:', userOpps.length);
+        console.log('User opportunities:', userOpps);
         setUserOpportunities(userOpps);
 
         // Calculate portfolio metrics
         const portfolioMetrics = calculatePortfolioMetrics(userOpps, currentGrtPrice);
+        console.log('Portfolio metrics:', portfolioMetrics);
         setPortfolioMetrics(portfolioMetrics);
 
         // Calculate diversification metrics
         const diversificationMetrics = calculateDiversificationMetrics(userOpps);
         setDiversificationMetrics(diversificationMetrics);
       } else {
+        console.log('No signals found for address:', normalizedAddress);
         setUserOpportunities([]);
         setPortfolioMetrics({
           totalValue: 0,
@@ -207,9 +221,30 @@ export default function Dashboard() {
           <p className="text-neumorphic mb-4">
             This wallet doesn't have any active curation signals yet.
           </p>
-          <p className="text-neumorphic text-sm">
-            Try a different wallet address or start curating subgraphs!
-          </p>
+          <div className="space-y-3">
+            <p className="text-neumorphic text-sm">
+              Try one of these addresses with active signals:
+            </p>
+            <div className="bg-gray-100 rounded-lg p-3 font-mono text-sm">
+              <button 
+                onClick={() => setWalletAddress("0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec")}
+                className="text-blue-600 hover:text-blue-800 underline block mb-1"
+                title="Click to load this address"
+              >
+                0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec
+              </button>
+              <button 
+                onClick={() => setWalletAddress("0x7849e1c1f1a54ee6d1e3c5bb7b2e68dfbc5a5cd4")}
+                className="text-blue-600 hover:text-blue-800 underline block"
+                title="Click to load this address"
+              >
+                0x7849e1c1f1a54ee6d1e3c5bb7b2e68dfbc5a5cd4
+              </button>
+            </div>
+            <p className="text-neumorphic text-xs">
+              Or start curating subgraphs to see your signals here!
+            </p>
+          </div>
         </div>
       )}
     </div>

@@ -86,59 +86,128 @@ export async function getUserCurationSignal(walletAddress) {
   // Ensure address is lowercase
   const curator = walletAddress.toLowerCase();
 
+  // Use the SAME query as Python Streamlit app for consistency
   const query = `
     query GetUserCurationSignal($curator: String!) {
-      signals(
-        where: { curator: $curator }
-        orderBy: signalledTokens
-        orderDirection: desc
-      ) {
+      curator(id: $curator) {
         id
-        signalledTokens
-        signal
-        averageCostBasis
-        realizedRewards
-        subgraphDeployment {
-          id
-          ipfsHash
+        nameSignals(first: 1000) {
           signalledTokens
-          signalAmount
-        }
-        curator {
-          id
+          unsignalledTokens
+          signal
+          subgraph {
+            id
+            metadata {
+              displayName
+            }
+            currentVersion {
+              id
+              subgraphDeployment {
+                id
+                ipfsHash
+                pricePerShare
+                signalAmount
+                signalledTokens
+              }
+            }
+          }
         }
       }
     }
   `;
 
   try {
-    console.log('Fetching user signals for:', curator);
+    console.log('🔍 Fetching user nameSignals for:', curator);
     const data = await graphClient.query(query, { curator });
-    console.log('Fetched signals:', data?.signals?.length || 0);
-    return data.signals || [];
+    console.log('📊 Raw GraphQL response:', data);
+    
+    const curatorData = data?.curator;
+    console.log('🎯 NameSignals found:', curatorData?.nameSignals?.length || 0);
+    
+    // Convert nameSignals to signals format for compatibility
+    const signals = [];
+    if (curatorData && curatorData.nameSignals) {
+      curatorData.nameSignals.forEach((nameSignal, index) => {
+        const subgraph = nameSignal.subgraph;
+        const deployment = subgraph?.currentVersion?.subgraphDeployment;
+        
+        if (deployment && deployment.ipfsHash) {
+          const signal = {
+            id: `${curator}-${deployment.ipfsHash}`,
+            signalledTokens: nameSignal.signalledTokens,
+            signal: nameSignal.signal,
+            averageCostBasis: '0', // Not available in nameSignals
+            realizedRewards: '0',  // Not available in nameSignals
+            subgraphDeployment: {
+              id: deployment.id,
+              ipfsHash: deployment.ipfsHash,
+              signalledTokens: deployment.signalledTokens,
+              signalAmount: deployment.signalAmount
+            },
+            curator: {
+              id: curator
+            }
+          };
+          
+          signals.push(signal);
+          
+          console.log(`NameSignal ${index + 1}:`, {
+            signalledTokens: nameSignal.signalledTokens,
+            signal: nameSignal.signal,
+            ipfsHash: deployment.ipfsHash,
+            subgraphName: subgraph?.metadata?.displayName
+          });
+        }
+      });
+    }
+    
+    console.log('🔄 Converted nameSignals to signals format:', signals.length);
+    return signals;
   } catch (error) {
-    console.error('Error fetching user curation signals:', error);
+    console.error('❌ Error fetching user curation signals:', error);
     return [];
   }
 }
 
 export async function getGrtPrice() {
-  // For now, let's use a fixed price and enhance this later
-  // You can integrate with price APIs like CoinGecko if needed
   try {
-    // Simple price fetch from CoinGecko
+    // Use The Graph's OHLC price API
+    const response = await fetch('https://token-api.thegraph.com/ohlc/prices/evm/0x9623063377ad1b27544c965ccd7342f7ea7e88c7?network_id=arbitrum-one&interval=1h&limit=1&page=1', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer eyJhbGciOiJLTVNFUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzk4Nzc1NzYsImp0aSI6IjAxYzJkYjcxLWUxNTgtNDExYi04Njc2LWEyZDI0MWQ3ODVhYSIsImlhdCI6MTc0Mzg3NzU3NiwiaXNzIjoiZGZ1c2UuaW8iLCJzdWIiOiIweGFmaWM5YzczNWU3MDY2Y2RkODgiLCJ2IjoxLCJha2kiOiIwZDlmNmIxYjBhN2U3Y2M4NTg5NDExNzkyODIwNTU3MGI5ODQ3ZjMxNWQ3ZWM5YjI0Y2FkOTI0YmE2Y2FmOGZhIiwidWlkIjoiMHhhZmljOWM3MzVlNzA2NmNkZDg4In0.Q-7yDDxRGjmzkgkhKdIZovYOyRC5P5wjFm66JcmisFXj6cv9mtDV6oAtQdAn_p0a-1F9x_8KI8z3eBuJRqcW3w',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const priceData = await response.json();
+      
+      // Get the most recent close price from OHLC data
+      if (priceData?.data && priceData.data.length > 0) {
+        const latestPrice = priceData.data[0].close; // Most recent OHLC data
+        console.log('💰 Fetched GRT price from The Graph API:', latestPrice);
+        return latestPrice;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching GRT price from The Graph API:', error);
+  }
+  
+  // Fallback to CoinGecko if The Graph API fails
+  try {
     const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=the-graph&vs_currencies=usd');
     if (response.ok) {
       const priceData = await response.json();
       const price = priceData?.['the-graph']?.usd || 0.0892;
-      console.log('Fetched GRT price:', price);
+      console.log('💰 Fetched GRT price from CoinGecko (fallback):', price);
       return price;
     }
   } catch (error) {
-    console.error('Error fetching GRT price:', error);
+    console.error('Error fetching GRT price from CoinGecko:', error);
   }
   
-  return 0.0892; // Fallback price
+  return 0.0892; // Final fallback price
 }
 
 export async function getSubgraphMetrics(ipfsHash) {

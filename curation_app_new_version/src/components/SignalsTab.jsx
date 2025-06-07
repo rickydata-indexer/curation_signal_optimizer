@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, TrendingUp, DollarSign } from 'lucide-react';
+import { openSubgraphLink } from '../utils/subgraphLinks';
 
 export default function SignalsTab({ userSignals, grtPrice }) {
   const formatCurrency = (value) => `$${value.toFixed(2)}`;
@@ -87,7 +88,11 @@ export default function SignalsTab({ userSignals, grtPrice }) {
                   </div>
                   
                   <div className="flex items-center space-x-3">
-                    <button className="btn-neumorphic p-3 rounded-xl">
+                    <button 
+                      onClick={() => openSubgraphLink(signal.deployment_id, signal.ipfs_hash)}
+                      className="btn-neumorphic p-3 rounded-xl"
+                      title="View in The Graph Explorer"
+                    >
                       <ExternalLink className="w-5 h-5 text-neumorphic" />
                     </button>
                   </div>

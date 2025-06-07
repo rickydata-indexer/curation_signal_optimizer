@@ -2,7 +2,6 @@
 // Ported from python_app/models/opportunities.py and models/signals.py
 
 const WEI_TO_GRT = 1e18;
-const WEEKS_PER_YEAR = 52.1429;
 
 // Helper function to convert Wei to GRT
 function weiToGrt(weiValue) {
@@ -16,33 +15,52 @@ export function calculateOpportunities(deployments, queryFees, queryCounts, grtP
   deployments.forEach(deployment => {
     const ipfsHash = deployment.ipfsHash;
     const signalledTokens = weiToGrt(deployment.signalledTokens);
-    const weeklyQueryFees = queryFees[ipfsHash] || 0;
-    const weeklyQueryCount = queryCounts[ipfsHash] || 0;
+    const annualQueryFees = queryFees[ipfsHash] || 0; // Already annual projections from API
+    const annualQueryCount = queryCounts[ipfsHash] || 0; // Already annual projections from API
 
-    // Calculate annual metrics
-    const annualQueryFees = weeklyQueryFees * WEEKS_PER_YEAR;
-    const annualQueryCount = weeklyQueryCount * WEEKS_PER_YEAR;
+    // Calculate curator share (10% of query fees) - this is in GRT tokens
+    const curatorShareGRT = annualQueryFees * 0.10;
 
-    // Calculate curator share (10% of query fees)
-    const curatorShare = annualQueryFees * 0.10;
+    // Convert curator share from GRT to USD for APR calculation
+    const curatorShareUSD = curatorShareGRT * grtPrice;
 
-    // Calculate APR for this subgraph
+    // Calculate APR for this subgraph (both values now in USD)
     const totalSignalValue = signalledTokens * grtPrice;
-    const apr = totalSignalValue > 0 ? (curatorShare / totalSignalValue) * 100 : 0;
+    const apr = totalSignalValue > 0 ? (curatorShareUSD / totalSignalValue) * 100 : 0;
+
+    // Convert annual back to daily for display purposes
+    const dailyQueryFees = annualQueryFees / 365;
+    const dailyQueryCount = annualQueryCount / 365;
+
+    // Add detailed logging for high APR subgraphs or test subgraph
+    if (apr > 100 || ipfsHash === 'QmdKXcBUHR3UyURqVRQHu1oV6VUkBrhi2vNvMx3bNDnUCc' || ipfsHash === 'QmRbn71wTNK3PmEb62wUK4G1XmKN14ZbHeTgi5JubL7evA') {
+      console.log(`🔍 APR Calculation for ${ipfsHash}:`);
+      console.log(`  📊 Signal: ${signalledTokens.toFixed(2)} GRT`);
+      console.log(`  💰 GRT Price: $${grtPrice.toFixed(4)}`);
+      console.log(`  💵 Signal Value: $${totalSignalValue.toFixed(2)}`);
+      console.log(`  📈 Annual Query Fees: ${annualQueryFees.toFixed(2)} GRT (confirmed: GRT tokens)`);
+      console.log(`  🎯 Curator Share: ${curatorShareGRT.toFixed(2)} GRT = $${curatorShareUSD.toFixed(2)} USD`);
+      console.log(`  📋 APR: ${apr.toFixed(2)}% (FIXED: now using USD/USD)`);
+      console.log(`  🔢 Weekly Queries: ${(dailyQueryCount * 7).toLocaleString()}`);
+      console.log(`  ✅ Units: Query fees are GRT tokens, properly converted to USD`);
+    }
 
     opportunities.push({
       id: ipfsHash,
+      deployment_id: deployment.id, // Include deployment ID for links
       ipfs_hash: ipfsHash,
       subgraph_name: `Subgraph ${ipfsHash.slice(0, 8)}...`,
       signal_amount: signalledTokens,
       signalled_tokens: signalledTokens,
       annual_queries: annualQueryCount,
       total_earnings: annualQueryFees,
-      curator_share: curatorShare,
-      estimated_earnings: curatorShare,
+      curator_share: curatorShareUSD,
+      estimated_earnings: curatorShareUSD,
       apr: apr,
-      weekly_queries: weeklyQueryCount,
-      weekly_query_fees: weeklyQueryFees,
+      daily_queries: dailyQueryCount,
+      daily_query_fees: dailyQueryFees,
+      weekly_queries: dailyQueryCount * 7, // Calculate weekly from daily for display
+      weekly_query_fees: dailyQueryFees * 7, // Calculate weekly from daily for display
       reserve_ratio: deployment.reserveRatio || 0,
       curator_count: deployment.curatorSignals?.length || 0
     });
@@ -70,15 +88,27 @@ export function calculateUserOpportunities(userSignals, allOpportunities, grtPri
     // Calculate user's portion of the total signal
     const portionOwned = totalSignalAmount > 0 ? signalAmount / totalSignalAmount : 0;
     
-    // Calculate user's estimated earnings based on their portion
+    // Calculate user's estimated earnings based on their portion (curator_share is already in USD)
     const estimatedEarnings = opportunity.curator_share * portionOwned;
     
-    // Calculate APR for user's position
+    // Calculate APR for user's position (both values in USD)
     const userSignalValue = signalAmount * grtPrice;
     const apr = userSignalValue > 0 ? (estimatedEarnings / userSignalValue) * 100 : 0;
 
+    // Debug logging for the problematic subgraph
+    if (ipfsHash === 'QmRbn71wTNK3PmEb62wUK4G1XmKN14ZbHeTgi5JubL7evA') {
+      console.log(`🎯 User APR Calculation for ${ipfsHash}:`);
+      console.log(`  👤 User Signal: ${signalAmount} GRT ($${userSignalValue.toFixed(2)})`);
+      console.log(`  📊 Total Signal: ${totalSignalAmount} GRT`);
+      console.log(`  🍰 Portion Owned: ${(portionOwned * 100).toFixed(2)}%`);
+      console.log(`  💰 Total Curator Share: $${opportunity.curator_share.toFixed(2)}`);
+      console.log(`  🎁 User Earnings: $${estimatedEarnings.toFixed(2)}`);
+      console.log(`  📈 User APR: ${apr.toFixed(2)}%`);
+    }
+
     userOpportunities.push({
       id: `${signal.id}`,
+      deployment_id: signal.subgraphDeployment?.id, // Include deployment ID for links
       wallet_address: signal.curator?.id || '',
       ipfs_hash: ipfsHash,
       subgraph_name: `Subgraph ${ipfsHash.slice(0, 8)}...`,

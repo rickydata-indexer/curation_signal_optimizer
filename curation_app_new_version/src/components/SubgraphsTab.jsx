@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, ExternalLink } from 'lucide-react';
+import { openSubgraphLink } from '../utils/subgraphLinks';
 
 export default function SubgraphsTab({ opportunities }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,7 +102,11 @@ export default function SubgraphsTab({ opportunities }) {
                       </span>
                     </td>
                     <td className="py-4 px-4 text-right">
-                      <button className="neumorphic-subtle p-2 rounded-lg hover:scale-105 transition-transform">
+                      <button 
+                        onClick={() => openSubgraphLink(subgraph.deployment_id, subgraph.ipfs_hash)}
+                        className="neumorphic-subtle p-2 rounded-lg hover:scale-105 transition-transform"
+                        title="View in The Graph Explorer"
+                      >
                         <ExternalLink className="w-4 h-4 text-neumorphic" />
                       </button>
                     </td>

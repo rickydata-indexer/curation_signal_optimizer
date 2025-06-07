@@ -17,20 +17,22 @@ function getAuthHeaders() {
 
 export async function querySupabase() {
   try {
-    // Get data from the last week
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoISO = weekAgo.toISOString();
+    // Get data from the last 30 days for more accurate calculations
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
-    // SQL query - same as Python version
+    // SQL query using daily data table for more accurate fee calculations
     const sqlQuery = `
       SELECT 
         subgraph_deployment_ipfs_hash,
         SUM(total_query_fees) as total_query_fees,
-        SUM(query_count) as query_count
-      FROM qos_hourly_query_volume 
-      WHERE end_epoch > '${weekAgoISO}'
+        SUM(query_count) as query_count,
+        COUNT(*) as days_with_data
+      FROM qos_daily_query_volume 
+      WHERE end_epoch > '${thirtyDaysAgoISO}'
       GROUP BY subgraph_deployment_ipfs_hash
+      HAVING COUNT(*) >= 7
     `;
 
     // Execute the query
@@ -62,15 +64,39 @@ export async function processQueryData() {
     const queryFees = {};
     const queryCounts = {};
 
-    // Process results
+    // Process results - convert to daily averages then to annual projections
     if (rows && Array.isArray(rows)) {
-      rows.forEach(row => {
+      console.log('🗄️ Processing Supabase query fee data...');
+      rows.forEach((row, index) => {
         const ipfsHash = row.subgraph_deployment_ipfs_hash;
         if (ipfsHash) {
-          queryFees[ipfsHash] = parseFloat(row.total_query_fees) || 0;
-          queryCounts[ipfsHash] = parseInt(row.query_count) || 0;
+          const totalFees = parseFloat(row.total_query_fees) || 0;
+          const totalQueries = parseInt(row.query_count) || 0;
+          const daysWithData = parseInt(row.days_with_data) || 1;
+          
+          // Calculate daily averages
+          const dailyQueryFees = totalFees / daysWithData;
+          const dailyQueryCount = totalQueries / daysWithData;
+          
+          // Project to annual figures (365 days)
+          const annualFees = dailyQueryFees * 365;
+          const annualQueries = dailyQueryCount * 365;
+          
+          queryFees[ipfsHash] = annualFees;
+          queryCounts[ipfsHash] = annualQueries;
+          
+          // Log details for high-fee subgraphs
+          if (totalFees > 1000 || ipfsHash === 'QmdKXcBUHR3UyURqVRQHu1oV6VUkBrhi2vNvMx3bNDnUCc') {
+            console.log(`💰 Query Fees for ${ipfsHash}:`);
+            console.log(`  📊 Raw total_query_fees: ${totalFees} (over ${daysWithData} days)`);
+            console.log(`  📈 Daily average: ${dailyQueryFees.toFixed(6)}`);
+            console.log(`  📅 Annual projection: ${annualFees.toFixed(6)}`);
+            console.log(`  ❓ UNITS: Are these GRT tokens or USD? Check your Supabase schema!`);
+            console.log(`  🔢 Daily queries: ${dailyQueryCount.toLocaleString()}`);
+          }
         }
       });
+      console.log(`✅ Processed ${rows.length} subgraphs from Supabase`);
     }
 
     return { queryFees, queryCounts };
@@ -84,21 +110,20 @@ export async function processQueryData() {
 // Additional utility function to get query data for a specific subgraph
 export async function getSubgraphQueryData(ipfsHash) {
   try {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoISO = weekAgo.toISOString();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
     const sqlQuery = `
       SELECT 
         subgraph_deployment_ipfs_hash,
-        SUM(total_query_fees) as total_query_fees,
-        SUM(query_count) as query_count,
-        DATE_TRUNC('day', end_epoch) as day
-      FROM qos_hourly_query_volume 
-      WHERE end_epoch > '${weekAgoISO}' 
+        total_query_fees,
+        query_count,
+        end_epoch as day
+      FROM qos_daily_query_volume 
+      WHERE end_epoch > '${thirtyDaysAgoISO}' 
         AND subgraph_deployment_ipfs_hash = '${ipfsHash}'
-      GROUP BY subgraph_deployment_ipfs_hash, DATE_TRUNC('day', end_epoch)
-      ORDER BY day ASC
+      ORDER BY end_epoch ASC
     `;
 
     const response = await fetch(SUPABASE_API_URL, {
