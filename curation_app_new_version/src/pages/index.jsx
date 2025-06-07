@@ -43,8 +43,11 @@ function PagesContent() {
 }
 
 export default function Pages() {
+    // Use basename for GitHub Pages deployment
+    const basename = import.meta.env.DEV ? '' : '/curation_signal_optimizer';
+    
     return (
-        <Router>
+        <Router basename={basename}>
             <PagesContent />
         </Router>
     );
