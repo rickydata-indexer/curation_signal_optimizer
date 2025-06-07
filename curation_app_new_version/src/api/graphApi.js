@@ -86,7 +86,7 @@ export async function getUserCurationSignal(walletAddress) {
   // Ensure address is lowercase
   const curator = walletAddress.toLowerCase();
 
-  // Use the SAME query as Python Streamlit app for consistency
+  // Query for BOTH nameSignals and deployment signals (older method)
   const query = `
     query GetUserCurationSignal($curator: String!) {
       curator(id: $curator) {
@@ -112,32 +112,47 @@ export async function getUserCurationSignal(walletAddress) {
             }
           }
         }
+        signals(first: 1000) {
+          id
+          signalledTokens
+          signal
+          averageCostBasis
+          realizedRewards
+          subgraphDeployment {
+            id
+            ipfsHash
+            signalAmount
+            signalledTokens
+          }
+        }
       }
     }
   `;
 
   try {
-    console.log('🔍 Fetching user nameSignals for:', curator);
+    console.log('🔍 Fetching user signals (both types) for:', curator);
     const data = await graphClient.query(query, { curator });
     console.log('📊 Raw GraphQL response:', data);
     
     const curatorData = data?.curator;
     console.log('🎯 NameSignals found:', curatorData?.nameSignals?.length || 0);
+    console.log('🎯 Deployment Signals found:', curatorData?.signals?.length || 0);
     
-    // Convert nameSignals to signals format for compatibility
     const signals = [];
-    if (curatorData && curatorData.nameSignals) {
-      curatorData.nameSignals.forEach((nameSignal, index) => {
-        const subgraph = nameSignal.subgraph;
-        const deployment = subgraph?.currentVersion?.subgraphDeployment;
+    const deploymentSignalMap = new Map(); // Track which deployments we've already processed
+    
+    // Process deployment signals first (older method)
+    if (curatorData && curatorData.signals) {
+      curatorData.signals.forEach((deploymentSignal, index) => {
+        const deployment = deploymentSignal.subgraphDeployment;
         
         if (deployment && deployment.ipfsHash) {
           const signal = {
-            id: `${curator}-${deployment.ipfsHash}`,
-            signalledTokens: nameSignal.signalledTokens,
-            signal: nameSignal.signal,
-            averageCostBasis: '0', // Not available in nameSignals
-            realizedRewards: '0',  // Not available in nameSignals
+            id: deploymentSignal.id,
+            signalledTokens: deploymentSignal.signalledTokens,
+            signal: deploymentSignal.signal,
+            averageCostBasis: deploymentSignal.averageCostBasis || '0',
+            realizedRewards: deploymentSignal.realizedRewards || '0',
             subgraphDeployment: {
               id: deployment.id,
               ipfsHash: deployment.ipfsHash,
@@ -146,22 +161,73 @@ export async function getUserCurationSignal(walletAddress) {
             },
             curator: {
               id: curator
-            }
+            },
+            signalType: 'deployment' // Mark as deployment signal
           };
           
           signals.push(signal);
+          deploymentSignalMap.set(deployment.ipfsHash, true);
           
-          console.log(`NameSignal ${index + 1}:`, {
-            signalledTokens: nameSignal.signalledTokens,
-            signal: nameSignal.signal,
+          console.log(`🎯 Deployment Signal ${index + 1}:`, {
+            signalledTokens: deploymentSignal.signalledTokens,
+            signal: deploymentSignal.signal,
             ipfsHash: deployment.ipfsHash,
-            subgraphName: subgraph?.metadata?.displayName
+            type: 'deployment'
           });
         }
       });
     }
     
-    console.log('🔄 Converted nameSignals to signals format:', signals.length);
+    // Process nameSignals (newer method) - only if not already covered by deployment signals
+    if (curatorData && curatorData.nameSignals) {
+      curatorData.nameSignals.forEach((nameSignal, index) => {
+        const subgraph = nameSignal.subgraph;
+        const deployment = subgraph?.currentVersion?.subgraphDeployment;
+        
+        if (deployment && deployment.ipfsHash) {
+          // Skip if we already have a deployment signal for this IPFS hash
+          if (!deploymentSignalMap.has(deployment.ipfsHash)) {
+            const signal = {
+              id: `${curator}-${deployment.ipfsHash}`,
+              signalledTokens: nameSignal.signalledTokens,
+              signal: nameSignal.signal,
+              averageCostBasis: '0', // Not available in nameSignals
+              realizedRewards: '0',  // Not available in nameSignals
+              subgraphDeployment: {
+                id: deployment.id,
+                ipfsHash: deployment.ipfsHash,
+                signalledTokens: deployment.signalledTokens,
+                signalAmount: deployment.signalAmount
+              },
+              curator: {
+                id: curator
+              },
+              signalType: 'name' // Mark as name signal
+            };
+            
+            signals.push(signal);
+            
+            console.log(`🏷️ Name Signal ${index + 1}:`, {
+              signalledTokens: nameSignal.signalledTokens,
+              signal: nameSignal.signal,
+              ipfsHash: deployment.ipfsHash,
+              subgraphName: subgraph?.metadata?.displayName,
+              type: 'name'
+            });
+          } else {
+            console.log(`⚠️ Skipping nameSignal for ${deployment.ipfsHash} (already covered by deployment signal)`);
+          }
+        }
+      });
+    }
+    
+    console.log('✅ Total signals found (both types):', signals.length);
+    console.log('📋 Signal breakdown:', {
+      deploymentSignals: curatorData?.signals?.length || 0,
+      nameSignals: curatorData?.nameSignals?.length || 0,
+      totalUnique: signals.length
+    });
+    
     return signals;
   } catch (error) {
     console.error('❌ Error fetching user curation signals:', error);
