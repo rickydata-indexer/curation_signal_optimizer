@@ -1,8 +1,13 @@
-# Base44 App
+# Curation Signal Optimizer
 
+A React application for analyzing and optimizing curation signals in The Graph Protocol. This app helps curators find the best opportunities for signaling on subgraphs.
 
-This app was created automatically by Base44.
-It's a Vite+React app that communicates with the Base44 API.
+## Features
+
+- Real-time analysis of curation opportunities
+- APR calculations and performance metrics
+- Support for both Name Signals and Deployment Signals
+- Integration with The Graph Protocol APIs
 
 ## Running the app
 
@@ -17,4 +22,6 @@ npm run dev
 npm run build
 ```
 
-For more information and support, please contact Base44 support at app@base44.com.
+## Deployment
+
+This app is configured for GitHub Pages deployment. Push to main branch to trigger automatic deployment.
