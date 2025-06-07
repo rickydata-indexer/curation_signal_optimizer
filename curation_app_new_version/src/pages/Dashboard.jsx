@@ -17,7 +17,7 @@ import {
 } from '../utils/opportunityCalculator';
 import { validateAndNormalizeAddress } from '../utils/addressValidation';
 
-const DEFAULT_WALLET = "0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec";
+const DEFAULT_WALLET = "0x74dbb201ecc0b16934e68377bc13013883d9417b";
 
 export default function Dashboard() {
   const [walletAddress, setWalletAddress] = useState(DEFAULT_WALLET);
@@ -227,11 +227,11 @@ export default function Dashboard() {
             </p>
             <div className="bg-gray-100 rounded-lg p-3 font-mono text-sm">
               <button 
-                onClick={() => setWalletAddress("0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec")}
+                onClick={() => setWalletAddress("0x74dbb201ecc0b16934e68377bc13013883d9417b")}
                 className="text-blue-600 hover:text-blue-800 underline block mb-1"
                 title="Click to load this address"
               >
-                0xec9a7fb6cbc2e41926127929c2dce6e9c5d33bec
+                0x74dbb201ecc0b16934e68377bc13013883d9417b
               </button>
               <button 
                 onClick={() => setWalletAddress("0x7849e1c1f1a54ee6d1e3c5bb7b2e68dfbc5a5cd4")}
