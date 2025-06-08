@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Filter, TrendingUp, DollarSign } from 'lucide-react';
+import { openSubgraphLink } from '../utils/subgraphLinks';
 
 export default function OpportunitiesTab({ opportunities, grtPrice }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,8 +140,12 @@ export default function OpportunitiesTab({ opportunities, grtPrice }) {
                   </div>
                   
                   <div className="text-center">
-                    <button className="btn-neumorphic px-6 py-3 rounded-xl font-medium text-neumorphic-dark">
-                      Invest
+                    <button
+                      onClick={() => openSubgraphLink(opportunity.deployment_id, opportunity.ipfs_hash)}
+                      className="btn-neumorphic px-6 py-3 rounded-xl font-medium text-neumorphic-dark hover:scale-105 transition-transform"
+                      title="Signal on this subgraph in The Graph Explorer"
+                    >
+                      Signal
                     </button>
                   </div>
                 </div>

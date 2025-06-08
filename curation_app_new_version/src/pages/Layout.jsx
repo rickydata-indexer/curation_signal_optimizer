@@ -141,7 +141,15 @@ export default function Layout({ children, currentPageName }) {
                 Curation Signal Optimizer
               </h1>
               <p className="text-neumorphic">
-                Maximize your APR through intelligent signal allocation
+                Maximize your APR through intelligent signal allocation - made by{' '}
+                <a
+                  href="https://x.com/rickydata42"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline transition-colors"
+                >
+                  rickydata
+                </a>
               </p>
             </div>
             <div className="neumorphic-subtle rounded-full p-4">
