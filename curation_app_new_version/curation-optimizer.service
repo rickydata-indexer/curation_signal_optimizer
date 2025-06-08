@@ -1,0 +1,21 @@
+[Unit]
+Description=Curation Signal Optimizer Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=rickydata
+WorkingDirectory=/home/rickydata/github/curation_signal_optimizer/curation_app_new_version
+ExecStart=/usr/bin/npm run prod
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=5174
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=curation-optimizer
+
+[Install]
+WantedBy=multi-user.target

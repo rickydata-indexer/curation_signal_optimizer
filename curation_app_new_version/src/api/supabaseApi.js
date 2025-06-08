@@ -1,12 +1,13 @@
 // Supabase API integration
 const SUPABASE_USERNAME = import.meta.env.VITE_SUPABASE_USERNAME;
 const SUPABASE_PASSWORD = import.meta.env.VITE_SUPABASE_PASSWORD;
-// Use direct HTTP in development, corsproxy.io in production (allows auth headers)
-const SUPABASE_BASE_URL = import.meta.env.DEV 
-  ? "http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io"
-  : "https://corsproxy.io/?http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io";
+// Multiple fallback options for API access
+const SUPABASE_DIRECT_URL = "http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io/api/pg-meta/default/query";
+const SUPABASE_PROXY_URL = "/api/supabase"; // Uses Vite proxy
+const SUPABASE_CORS_PROXY_URL = "https://cors-anywhere.herokuapp.com/http://supabasekong-so4w8gock004k8kw8ck84o80.94.130.17.180.sslip.io/api/pg-meta/default/query";
 
-const SUPABASE_API_URL = `${SUPABASE_BASE_URL}/api/pg-meta/default/query`;
+// Try direct connection first, fallback to proxy if needed
+const SUPABASE_API_URL = SUPABASE_DIRECT_URL;
 
 function getAuthHeaders() {
   const credentials = `${SUPABASE_USERNAME}:${SUPABASE_PASSWORD}`;
@@ -19,6 +20,32 @@ function getAuthHeaders() {
   };
 }
 
+async function fetchWithFallback(url, options, fallbackUrls = []) {
+  const urls = [url, ...fallbackUrls];
+
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      console.log(`🔄 Attempting API call to: ${urls[i]}`);
+      const response = await fetch(urls[i], options);
+
+      if (response.ok) {
+        console.log(`✅ Success with URL: ${urls[i]}`);
+        return response;
+      } else {
+        console.warn(`❌ Failed with URL: ${urls[i]} - Status: ${response.status}`);
+        if (i === urls.length - 1) {
+          throw new Error(`All URLs failed. Last status: ${response.status}`);
+        }
+      }
+    } catch (error) {
+      console.warn(`❌ Error with URL: ${urls[i]} - ${error.message}`);
+      if (i === urls.length - 1) {
+        throw error;
+      }
+    }
+  }
+}
+
 export async function querySupabase() {
   try {
     // Get data from the last 30 days for more accurate calculations
@@ -28,31 +55,29 @@ export async function querySupabase() {
 
     // SQL query using daily data table for more accurate fee calculations
     const sqlQuery = `
-      SELECT 
+      SELECT
         subgraph_deployment_ipfs_hash,
         SUM(total_query_fees) as total_query_fees,
         SUM(query_count) as query_count,
         COUNT(*) as days_with_data
-      FROM qos_daily_query_volume 
+      FROM qos_daily_query_volume
       WHERE end_epoch > '${thirtyDaysAgoISO}'
       GROUP BY subgraph_deployment_ipfs_hash
       HAVING COUNT(*) >= 7
     `;
 
-    // Execute the query
-    const response = await fetch(SUPABASE_API_URL, {
+    const requestOptions = {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ query: sqlQuery })
-    });
+    };
 
-    if (response.ok) {
-      const data = await response.json();
-      return data || [];
-    } else {
-      const errorText = await response.text();
-      throw new Error(`Error executing query: HTTP ${response.status} - ${errorText}`);
-    }
+    // Try multiple URLs with fallback
+    const fallbackUrls = [SUPABASE_PROXY_URL];
+    const response = await fetchWithFallback(SUPABASE_API_URL, requestOptions, fallbackUrls);
+
+    const data = await response.json();
+    return data || [];
 
   } catch (error) {
     console.error('Supabase query error:', error);
@@ -130,11 +155,14 @@ export async function getSubgraphQueryData(ipfsHash) {
       ORDER BY end_epoch ASC
     `;
 
-    const response = await fetch(SUPABASE_API_URL, {
+    const requestOptions = {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ query: sqlQuery })
-    });
+    };
+
+    const fallbackUrls = [SUPABASE_PROXY_URL];
+    const response = await fetchWithFallback(SUPABASE_API_URL, requestOptions, fallbackUrls);
 
     if (response.ok) {
       const data = await response.json();

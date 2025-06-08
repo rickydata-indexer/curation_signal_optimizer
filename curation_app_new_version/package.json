@@ -7,7 +7,9 @@
     "dev": "vite --port 5174",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "vite --port 5174 --host 0.0.0.0",
+    "prod": "npm run build && vite preview --port 5174 --host 0.0.0.0"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.2",
