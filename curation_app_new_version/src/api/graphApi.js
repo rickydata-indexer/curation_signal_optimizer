@@ -57,6 +57,9 @@ export async function getSubgraphDeployments() {
         signalledTokens
         signalAmount
         reserveRatio
+        versions {
+          id
+        }
         curatorSignals {
           id
           curator {

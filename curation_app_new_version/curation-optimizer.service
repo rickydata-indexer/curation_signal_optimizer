@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=rickydata
 WorkingDirectory=/home/rickydata/github/curation_signal_optimizer/curation_app_new_version
-ExecStart=/usr/bin/npm run prod
+ExecStart=/usr/bin/node server.cjs
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
