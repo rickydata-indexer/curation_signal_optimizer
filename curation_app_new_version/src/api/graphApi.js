@@ -111,6 +111,9 @@ export async function getUserCurationSignal(walletAddress) {
                 pricePerShare
                 signalAmount
                 signalledTokens
+                versions {
+                  id
+                }
               }
             }
           }
@@ -126,6 +129,9 @@ export async function getUserCurationSignal(walletAddress) {
             ipfsHash
             signalAmount
             signalledTokens
+            versions {
+              id
+            }
           }
         }
       }
@@ -160,7 +166,8 @@ export async function getUserCurationSignal(walletAddress) {
               id: deployment.id,
               ipfsHash: deployment.ipfsHash,
               signalledTokens: deployment.signalledTokens,
-              signalAmount: deployment.signalAmount
+              signalAmount: deployment.signalAmount,
+              versions: deployment.versions
             },
             curator: {
               id: curator
@@ -200,7 +207,8 @@ export async function getUserCurationSignal(walletAddress) {
                 id: deployment.id,
                 ipfsHash: deployment.ipfsHash,
                 signalledTokens: deployment.signalledTokens,
-                signalAmount: deployment.signalAmount
+                signalAmount: deployment.signalAmount,
+                versions: deployment.versions
               },
               curator: {
                 id: curator

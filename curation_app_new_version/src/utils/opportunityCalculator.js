@@ -8,6 +8,28 @@ function weiToGrt(weiValue) {
   return parseFloat(weiValue) / WEI_TO_GRT;
 }
 
+// Extract version ID from deployment versions array (remove part after the -)
+function getVersionId(deployment) {
+  if (deployment.versions && deployment.versions.length > 0) {
+    const versionId = deployment.versions[0].id;
+    // Remove the part after the dash (e.g., "9kVpuw3Cgf6NQckem8SXH7TQGXsJ8Hb8Zm6mQF7eaiyd-0" -> "9kVpuw3Cgf6NQckem8SXH7TQGXsJ8Hb8Zm6mQF7eaiyd")
+    return versionId.split('-')[0];
+  }
+  return null;
+}
+
+// Extract version ID from user signal data (handles both deployment and name signals)
+function getUserSignalVersionId(signal) {
+  // For deployment signals, use the versions array
+  if (signal.subgraphDeployment?.versions) {
+    return getVersionId(signal.subgraphDeployment);
+  }
+
+  // For name signals, we might have the currentVersion.id directly
+  // This would need to be added to the signal processing if available
+  return null;
+}
+
 // Calculate curation opportunities from deployments and query data
 export function calculateOpportunities(deployments, queryFees, queryCounts, grtPrice) {
   const opportunities = [];
@@ -47,7 +69,7 @@ export function calculateOpportunities(deployments, queryFees, queryCounts, grtP
 
     opportunities.push({
       id: ipfsHash,
-      deployment_id: deployment.id, // Include deployment ID for links
+      deployment_id: getVersionId(deployment), // Extract version ID for The Graph Explorer links
       ipfs_hash: ipfsHash,
       subgraph_name: `Subgraph ${ipfsHash.slice(0, 8)}...`,
       signal_amount: signalledTokens,
@@ -108,7 +130,7 @@ export function calculateUserOpportunities(userSignals, allOpportunities, grtPri
 
     userOpportunities.push({
       id: `${signal.id}`,
-      deployment_id: signal.subgraphDeployment?.id, // Include deployment ID for links
+      deployment_id: getUserSignalVersionId(signal), // Extract version ID for The Graph Explorer links
       wallet_address: signal.curator?.id || '',
       ipfs_hash: ipfsHash,
       subgraph_name: `Subgraph ${ipfsHash.slice(0, 8)}...`,
